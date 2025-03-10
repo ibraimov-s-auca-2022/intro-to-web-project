@@ -1,5 +1,8 @@
 Project instead of labs
 
+
+Poster service with auth
+
 If you want to run:
 
 Go to .env and write your postgres config.
