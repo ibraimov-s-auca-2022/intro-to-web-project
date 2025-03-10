@@ -1,6 +1,3 @@
-Project instead of labs
-
-
 Poster service with auth
 
 If you want to run:
