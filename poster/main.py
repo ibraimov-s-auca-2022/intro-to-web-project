@@ -1,6 +1,7 @@
 from flask import Flask, jsonify, request
 from db import db, User, Post, Like, init_db
 from auth import Auth
+from config import SERVER_PORT
 
 app = Flask(__name__)
 init_db(app)
@@ -9,8 +10,8 @@ init_db(app)
 def ping():
     return "pong"
 
-def check_session(data):
-    if Auth.check_session(data):
+def check_session(session_id):
+    if Auth.check_session(session_id):
         return True
     return False
 
@@ -18,7 +19,7 @@ def check_session(data):
 def login():
     data = request.get_json()
 
-    if 'email' not in data or 'password' not in data or "user_id" not in data:
+    if 'email' not in data or 'password' not in data:
         return jsonify({"error": "Missing username, email, or password"}), 400
     user = User.query.filter_by(email=data['email']).first()
     if not user:
@@ -43,7 +44,7 @@ def logout():
 @app.route('/users', methods=['GET'])
 def get_users():
     data = request.get_json()
-    if not check_session(data):
+    if not check_session(data["session_id"]):
         return jsonify({"error": "Invalid session_id"}), 401
 
     users = User.query.all()
@@ -60,7 +61,7 @@ def get_users():
 @app.route('/user/<int:id>', methods=['GET'])
 def get_user(id):
     data = request.get_json()
-    if not check_session(data):
+    if not check_session(data["session_id"]):
         return jsonify({"error": "Invalid session_id"}), 401
     user = User.query.get(id)
 
@@ -100,7 +101,7 @@ def create_user():
 @app.route('/user/<int:id>', methods=['DELETE'])
 def delete_user(id):
     data = request.get_json()
-    if not check_session(data):
+    if not check_session(data["session_id"]):
         return jsonify({"error": "Invalid session_id"}), 401
     user = User.query.get(Auth.get_user_id(data['session_id']))
 
@@ -115,7 +116,7 @@ def delete_user(id):
 @app.route('/posts', methods=['GET'])
 def get_posts():
     data = request.get_json()
-    if not check_session(data):
+    if not check_session(data["session_id"]):
         return jsonify({"error": "Invalid session_id"}), 401
 
     posts = Post.query.all()
@@ -137,7 +138,7 @@ def get_posts():
 @app.route('/post/<int:id>', methods=['GET'])
 def get_post(id):
     data = request.get_json()
-    if not check_session(data):
+    if not check_session(data["session_id"]):
         return jsonify({"error": "Invalid session_id"}), 401
     post = Post.query.get(id)
     if not post:
@@ -154,11 +155,11 @@ def get_post(id):
 @app.route('/post', methods=['POST'])
 def create_post():
     data = request.get_json()
-    if not check_session(data):
+    if not check_session(data["session_id"]):
         return jsonify({"error": "Invalid session_id"}), 401
 
     if not data or 'title' not in data or 'content' not in data:
-        return jsonify({"error": "Missing title, content, or user_id"}), 400
+        return jsonify({"error": "Missing title, content"}), 400
 
     user = User.query.get(Auth.get_user_id(data['session_id']))
     if not user:
@@ -167,7 +168,7 @@ def create_post():
     new_post = Post(
         title=data['title'],
         content=data['content'],
-        user_id=data['user_id']
+        user_id=Auth.get_user_id(data['session_id']),
     )
 
     db.session.add(new_post)
@@ -183,7 +184,7 @@ def create_post():
 @app.route('/post/<int:id>', methods=['PUT'])
 def update_post(id):
     data = request.get_json()
-    if not check_session(data):
+    if not check_session(data["session_id"]):
         return jsonify({"error": "Invalid session_id"}), 401
 
     if not data or 'title' not in data or 'content' not in data or 'session_id' not in data:
@@ -211,13 +212,15 @@ def update_post(id):
         "created_at": post.created_at.strftime('%Y-%m-%d %H:%M:%S')
     }), 200
 
-@app.route('/post/<int:id>', methods=['DELETE'])
-def delete_post(id):
+@app.route('/post', methods=['DELETE'])
+def delete_post():
     data = request.get_json()
-    if not check_session(data):
+    if not check_session(data["session_id"]):
         return jsonify({"error": "Invalid session_id"}), 401
+    if 'post_id' not in data:
+        return jsonify({"error": "Missing post_id"}), 400
 
-    post = Post.query.get(id)
+    post = Post.query.get(data["post_id"])
 
     if post.user_id != Auth.get_user_id(data['session_id']):
         return jsonify({"error": "User not found"}), 401
@@ -228,35 +231,35 @@ def delete_post(id):
     db.session.delete(post)
     db.session.commit()
 
-    return jsonify({"message": f"Post {id} deleted successfully"}), 200
+    return jsonify({"message": f"Post {data['post_id']} deleted successfully"}), 200
 
 
-@app.route('/like/<int:post_id>', methods=['PUT'])
-def like_post(post_id):
+@app.route('/like', methods=['PUT'])
+def like_post():
     data = request.get_json()
-    if not check_session(data):
+    if not check_session(data["session_id"]):
         return jsonify({"error": "Invalid session_id"}), 401
 
-    if not data or 'user_id' not in data:
+    if  'post_id' not in data:
         return jsonify({"error": "Missing user_id"}), 400
 
-    user_id = data['user_id']
-    post = Post.query.get(post_id)
+    user_id = Auth.get_user_id(data['session_id'])
+    post = Post.query.get(data['post_id'])
 
     if not post:
         return jsonify({"error": "Post not found"}), 404
 
-    existing_like = Like.query.filter_by(post_id=post_id, user_id=user_id).first()
+    existing_like = Like.query.filter_by(post_id=data['post_id'], user_id=user_id).first()
 
     if existing_like:
         return jsonify({"message": "User has already liked this post"}), 200
 
-    new_like = Like(post_id=post_id, user_id=user_id)
+    new_like = Like(post_id=data['post_id'], user_id=user_id)
     db.session.add(new_like)
     db.session.commit()
 
     return jsonify({
-        "post_id": post_id,
+        "post_id": data['post_id'],
         "user_id": user_id,
         "message": "Like added successfully"
     }), 201
@@ -264,7 +267,7 @@ def like_post(post_id):
 @app.route('/like/<int:post_id>', methods=['DELETE'])
 def unlike_post(post_id):
     data = request.get_json()
-    if not check_session(data):
+    if not check_session(data["session_id"]):
         return jsonify({"error": "Invalid session_id"}), 401
 
     if not data or 'user_id' not in data:
@@ -290,6 +293,5 @@ def unlike_post(post_id):
         "message": "Unlike deleted successfully"
     })
 
-
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=8080)
+    app.run(debug=True, host='0.0.0.0', port=SERVER_PORT)
