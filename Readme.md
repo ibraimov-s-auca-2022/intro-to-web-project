@@ -1,5 +1,8 @@
 Poster service with auth
 
+Used flask, postgres, auth implemented with sessions
+
+
 If you want to run:
 
 Go to .env and write your postgres config.
